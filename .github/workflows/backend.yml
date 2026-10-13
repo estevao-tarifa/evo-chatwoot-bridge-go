@@ -1,0 +1,163 @@
+name: backend
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: gofmt / vet / build / test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          # the module lives in backend/, so setup-go's default ./go.sum lookup misses it
+          cache-dependency-path: backend/go.sum
+      - name: gofmt (fail on unformatted files)
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt found unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: go build
+        run: go build ./...
+      - name: go test
+        run: go test -race -shuffle=on ./...
+      - name: go mod verify
+        run: go mod verify
+      - name: Dependency allowlist (ADR-0003)
+        run: |
+          allowed='["github.com/go-sql-driver/mysql","golang.org/x/crypto","github.com/prometheus/client_golang","github.com/stretchr/testify"]'
+          disallowed="$(go mod edit -json | jq -r --argjson allowed "$allowed" '
+            .Require[]?
+            | select(.Indirect != true)
+            | .Path
+            | select(. as $p | $allowed | index($p) == null)
+          ')"
+          if [ -n "$disallowed" ]; then
+            echo "::error::direct dependency outside the ADR-0003 allowlist:"
+            echo "$disallowed"
+            exit 1
+          fi
+      - name: staticcheck
+        run: |
+          # staticcheck v0.8.1 cannot read Go 1.27 export data; pin the first
+          # build that can until a tagged release supports it.
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0-0.dev.0.20261009230814-452d5bb86b45
+          "$(go env GOPATH)/bin/staticcheck" ./...
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+      - name: docker image build (ADR-0007)
+        run: docker build -t evo-chatwoot-bridge:ci .
+
+  migrations:
+    name: storage integration (MySQL 8)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    # H2: the migration integration tests silently t.Skip when TEST_MYSQL_DSN is
+    # unset, so they must run against a real MySQL service here — otherwise
+    # migration safety is never enforced in CI.
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: evo_bridge_test
+          MYSQL_USER: bridge
+          MYSQL_PASSWORD: bridge_dev_pw
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          # the module lives in backend/, so setup-go's default ./go.sum lookup misses it
+          cache-dependency-path: backend/go.sum
+      - name: storage integration tests (serial, fail on any skip)
+        env:
+          TEST_MYSQL_DSN: bridge:bridge_dev_pw@tcp(127.0.0.1:3306)/evo_bridge_test
+        run: |
+          set -uo pipefail
+          test -n "${TEST_MYSQL_DSN:-}" || exit 1
+          # The mysql integration tests reset the shared disposable schema: never run in parallel.
+          set +e
+          go test -json -race -p 1 -count=1 -shuffle=on ./internal/storage/mysql/ ./internal/dedup/ ./cmd/bridge/ | tee "$RUNNER_TEMP/integration.jsonl"
+          status="${PIPESTATUS[0]}"
+          set -e
+          # Preserve Go's failure before evaluating evidence, not grep's exit code.
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          events = [json.loads(line) for line in (Path(os.environ['RUNNER_TEMP']) / 'integration.jsonl').read_text().splitlines()]
+          assert not any(e['Action'] == 'skip' for e in events), 'integration test/subtest skipped'
+          passed = {(e['Package'].rsplit('/', 1)[-1], e.get('Test')) for e in events if e['Action'] == 'pass'}
+          required = {
+              ('mysql', 'TestMigrateFreshDatabase'),
+              *[('mysql', name) for name in (
+                  'TestClaimConcurrentSingleWinner', 'TestClaimOwnershipGuard',
+                  'TestReclaimConcurrentSingleWinner', 'TestReclaimSafetyFloor',
+                  'TestPayloadRepeatedWrites', 'TestPayloadRoundTrip',
+                  'TestCleanupPreservesUnresolvedAndBatches', 'TestRecoverStaleBounded',
+                  'TestClaimIdentityAndRetention', 'TestMutationRejectsInvalidInput',
+                  'TestQA_ConcurrentCompleteAndCleanup',
+                  'TestCleanupCancellationDuringQuery', 'TestClaimFoundRowsContract',
+                  # ingress/worker: release guard, quarantine
+                  # classification and the connections repo.
+                  'TestSlice4_ReleaseGuardedDelete', 'TestSlice4_QuarantineClassification',
+                  'TestSlice4_ConnectionsList',
+                  # Chatwoot ingress: reverse mapping lookup
+                  # and the F5 loop-break destination lookup.
+                  'TestContactMappingsFindByConversation', 'TestEchoStoreForwardedToChatwoot',
+                  # admin surface: connections CRUD, admin bootstrap/
+                  # revocation/duplicate conflict, logs pagination, dashboard
+                  # aggregates and write-only notification settings.
+                  'TestConnectionsCRUD', 'TestAdminUsersBootstrapAndRevocation',
+                  'TestAdminUsersDuplicateConflict', 'TestLogsPaginationSQL',
+                  'TestDashboardAggregates', 'TestNotificationSettingsWriteOnly',
+              )],
+              # `bridge migrate` end-to-end (subcommand dispatch + idempotent
+              # second run) against the same disposable MySQL schema.
+              ('bridge', 'TestProcessMigrateAppliesThenSkips'),
+          }
+          assert required <= passed, f'required tests did not PASS: {required - passed}'
+          assert sum(p == 'mysql' and t is not None and '/' not in t for p, t in passed) >= 12, 'missing storage tests'
+          print(f'integration evidence: {len(passed)} PASS events, no skips, all required tests passed')
+          PY

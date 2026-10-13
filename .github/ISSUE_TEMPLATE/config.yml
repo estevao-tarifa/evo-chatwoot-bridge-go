@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/estevao-tarifa/evo-chatwoot-bridge-go/tree/main/docs
+    about: Architecture, API, configuration and testing guides.
+  - name: Install guide
+    url: https://github.com/estevao-tarifa/evo-chatwoot-bridge-go/blob/main/docs/INSTALL.md
+    about: Bring up the bridge (Docker Compose or EasyPanel) and wire the webhooks.
+  - name: Troubleshooting guide
+    url: https://github.com/estevao-tarifa/evo-chatwoot-bridge-go/blob/main/docs/TROUBLESHOOTING.md
+    about: Real failure modes with their cause and fix, before filing a bug.
+  - name: Report a vulnerability
+    url: https://github.com/estevao-tarifa/evo-chatwoot-bridge-go/security/advisories/new
+    about: Security problems go through SECURITY.md — never a public issue.

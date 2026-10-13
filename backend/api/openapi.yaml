@@ -1,0 +1,294 @@
+openapi: 3.0.3
+info:
+  title: evo-chatwoot-bridge admin API
+  version: "1.0.0"
+  description: >
+    Authenticated admin REST surface (Phase 5). Session cookie auth only, no
+    bearer. Every route under /api/v1 requires an admin session except
+    auth/{state,setup,login,logout,me} and meta. State-changing requests require
+    the X-CSRF: 1 header and a JSON content type (application/json). Secrets are
+    write-only and never returned; the only token-bearing responses are the two
+    webhook-url reveal endpoints.
+servers:
+  - url: /
+paths:
+  /api/v1/meta:
+    get:
+      summary: Service name, version and commit
+      responses:
+        "200":
+          description: OK
+  /api/v1/auth/state:
+    get:
+      summary: Whether first-run setup is required
+      responses:
+        "200":
+          description: OK
+  /api/v1/auth/setup:
+    post:
+      summary: Create the first admin (only while admin_users is empty)
+      responses:
+        "200":
+          description: OK
+        "403":
+          description: Setup already completed
+        "415":
+          description: Content type must be application/json
+  /api/v1/auth/login:
+    post:
+      summary: Verify credentials and issue a session cookie
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Invalid credentials
+        "429":
+          description: Rate limited
+        "415":
+          description: Content type must be application/json
+  /api/v1/auth/logout:
+    post:
+      summary: Revoke the session and clear the cookie
+      responses:
+        "200":
+          description: OK
+        "415":
+          description: Content type must be application/json
+  /api/v1/auth/me:
+    get:
+      summary: Current session user or null
+      responses:
+        "200":
+          description: OK
+  /api/v1/dashboard/stats:
+    get:
+      summary: Dashboard summary
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthenticated
+  /api/v1/dashboard/messages-per-hour:
+    get:
+      summary: Message counts per hour (24h window)
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthenticated
+  /api/v1/dashboard/messages-per-day:
+    get:
+      summary: Message counts per day (30d window)
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthenticated
+  /api/v1/dashboard/message-types:
+    get:
+      summary: Message type tallies
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthenticated
+  /api/v1/connections:
+    get:
+      summary: List connections (secrets masked)
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthenticated
+    post:
+      summary: Create a connection
+      responses:
+        "201":
+          description: Created
+        "401":
+          description: Unauthenticated
+        "415":
+          description: Content type must be application/json
+  /api/v1/connections/{id}:
+    get:
+      summary: Get one connection (secrets masked)
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+    patch:
+      summary: Partial update (secrets write-only, no clear)
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+        "415":
+          description: Content type must be application/json
+    delete:
+      summary: Deactivate a connection (preserves history)
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+        "415":
+          description: Content type must be application/json
+  /api/v1/connections/{id}/test:
+    post:
+      summary: Probe the Evolution and Chatwoot credentials
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+        "415":
+          description: Content type must be application/json
+  /api/v1/connections/{id}/resolve-token:
+    post:
+      summary: Resolve and persist the Evolution instance token (never returned)
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+        "502":
+          description: Upstream failed
+        "415":
+          description: Content type must be application/json
+  /api/v1/connections/{id}/webhook:
+    post:
+      summary: Configure the Evolution webhook (URL not returned)
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+        "415":
+          description: Content type must be application/json
+  /api/v1/connections/{id}/webhook-status:
+    get:
+      summary: Webhook configuration status (URLs masked)
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+  /api/v1/connections/{id}/contacts/sync:
+    post:
+      summary: Import Evolution contacts into Chatwoot
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+        "415":
+          description: Content type must be application/json
+  /api/v1/connections/{id}/webhook-url/evolution:
+    get:
+      summary: Reveal the Evolution webhook URL (token-bearing)
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+  /api/v1/connections/{id}/webhook-url/chatwoot:
+    get:
+      summary: Reveal the Chatwoot webhook URL (token-bearing)
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+  /api/v1/chatwoot/inboxes/query:
+    post:
+      summary: List Chatwoot inboxes (credentials in the body)
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthenticated
+        "415":
+          description: Content type must be application/json
+  /api/v1/chatwoot/inboxes:
+    post:
+      summary: Create a Chatwoot API-channel inbox
+      responses:
+        "201":
+          description: Created
+        "401":
+          description: Unauthenticated
+        "415":
+          description: Content type must be application/json
+  /api/v1/connections/{id}/chatwoot/inbox-settings:
+    patch:
+      summary: Update inbox settings and mirror them locally
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+        "415":
+          description: Content type must be application/json
+  /api/v1/connections/{id}/chatwoot/webhook:
+    post:
+      summary: Point the Chatwoot inbox webhook at the bridge (URL not returned)
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+        "415":
+          description: Content type must be application/json
+  /api/v1/notifications/settings:
+    get:
+      summary: Notification settings (smtpPass masked)
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthenticated
+    patch:
+      summary: Partial notification settings update (smtpPass write-only)
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthenticated
+        "415":
+          description: Content type must be application/json
+  /api/v1/notifications/alerts:
+    get:
+      summary: Paginated alert history
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthenticated
+  /api/v1/notifications/failure-states:
+    get:
+      summary: In-memory notification failure state
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthenticated
+  /api/v1/logs:
+    get:
+      summary: Paginated message logs
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Invalid pagination
+        "401":
+          description: Unauthenticated
+  /api/v1/settings/bridge-url:
+    get:
+      summary: Current bridge URL and its source
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthenticated

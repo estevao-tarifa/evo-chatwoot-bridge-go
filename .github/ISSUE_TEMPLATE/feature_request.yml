@@ -1,0 +1,73 @@
+name: Feature request
+description: Propose a change in bridge behaviour
+title: "[feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before proposing a change, read
+        [CONTRIBUTING.md](https://github.com/estevao-tarifa/evo-chatwoot-bridge-go/blob/main/CONTRIBUTING.md):
+        work follows `SPEC → ARCHITECTURE → CONTRACT → IMPLEMENTATION → TEST → REVIEW → DOCS → COMMIT`, and
+        **nothing starts before a spec exists**. Do not paste tokens, payloads,
+        phone numbers or customer names; use synthetic examples only.
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: The operator or user problem this solves, with a concrete scenario.
+      placeholder: A connection with several Chatwoot inboxes should route each Evolution instance to its own inbox.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behaviour
+      description: What the bridge does today (route, docs page or config key if known).
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed behaviour
+      description: The behaviour you want, and the smallest change that delivers it.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: invariants
+    attributes:
+      label: Does this touch an identity or idempotency invariant?
+      description: |
+        Identity integrity (external messages must reuse contacts/conversations;
+        a group's identity is its JID, never its display name) and idempotency
+        (a message is delivered at most once) are enforced around the persistent
+        claim table. Any change to a boundary, a dependency direction or a data
+        flow **requires an ADR** in `docs/adr/` before implementation.
+      options:
+        - "No — it does not touch identity or idempotency"
+        - "Yes — it changes an identity or idempotency invariant (ADR required)"
+        - "Not sure — needs maintainer triage"
+    validations:
+      required: true
+
+  - type: textarea
+    id: adr
+    attributes:
+      label: Architecture impact (if any)
+      description: |
+        If the answer above is "Yes", describe which boundary/decision changes and
+        that an ADR in `docs/adr/` will record it. Leave "None" otherwise.
+      placeholder: None
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches and why the proposal is preferred. Optional.
+    validations:
+      required: false

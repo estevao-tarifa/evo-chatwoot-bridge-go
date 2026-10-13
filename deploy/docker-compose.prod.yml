@@ -1,0 +1,118 @@
+# deploy/docker-compose.prod.yml — single-host deployment of evo-chatwoot-bridge.
+#
+#   cp deploy/example.env deploy/.env      # then edit it (CHANGE_ME placeholders)
+#   docker compose -f deploy/docker-compose.prod.yml run --rm bridge migrate
+#   docker compose -f deploy/docker-compose.prod.yml up -d
+#
+# Full guide: deploy/README.md. Environment reference: deploy/example.env.
+#
+# Two services, one of them optional:
+#   * bridge — the Go binary, built from backend/Dockerfile. Always started.
+#   * ui     — the React SPA served by nginx, built from frontend/Dockerfile.
+#              Behind the `ui` profile, so `up -d` alone starts only the bridge:
+#                  docker compose --profile ui -f … up -d
+#              The SPA needs `/api` to reach the bridge on the same origin; see
+#              the "Optional frontend" section of deploy/README.md before you
+#              expose it.
+#
+# There is NO MySQL service here on purpose: the bridge attaches to an existing
+# MySQL over an external Docker network (DB_NETWORK in deploy/.env), so its
+# credentials and data stay where your database already lives.
+#
+# Everything interpolated with ${...} is read from deploy/.env (Docker Compose
+# loads the `.env` next to this file automatically) or from the shell.
+#
+# Compose file version: Compose v2 schema (the `name:` key and `profiles:` need
+# Docker Compose v2.20+).
+name: evo-chatwoot-bridge
+
+services:
+  bridge:
+    build:
+      # backend/Dockerfile: static binary in a scratch image, non-root, no
+      # shell. Nothing here needs a build arg beyond the version metadata.
+      context: ../backend
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-none}
+    image: ${BRIDGE_IMAGE:-evo-chatwoot-bridge:latest}
+    container_name: evo-chatwoot-bridge
+    restart: unless-stopped
+    # Every variable in this file is documented in deploy/example.env; the names
+    # are exactly the ones backend/internal/config/config.go reads. APP_ENV must
+    # stay `production` there, or the process starts without its secrets being
+    # mandatory.
+    env_file:
+      - .env
+    # Publish the container port on the host. Point your reverse proxy (or
+    # EasyPanel/Traefik) at this port and give it a TLS hostname; that hostname
+    # is what BRIDGE_URL and the webhook URLs must match.
+    ports:
+      - "${BRIDGE_HOST_PORT:-8100}:3000"
+    networks:
+      - db
+    # The image already declares a non-root user; restated so an edit to the
+    # Dockerfile cannot silently run the bridge as root.
+    user: "65532:65532"
+    # The binary performs no filesystem writes (no temp files, no cache, CA
+    # bundle baked into the image), so the root filesystem can be read-only.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # The image ships HEALTHCHECK `CMD ["/bridge","healthcheck"]`, which probes
+    # /healthz (liveness). There is no in-container /readyz probe mode, so
+    # readiness (MySQL reachable) is checked from the host: `curl …/readyz`.
+    healthcheck:
+      test: ["CMD", "/bridge", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    # No volumes: the bridge is stateless. All state lives in MySQL.
+    # One replica only — `docker compose up --scale bridge=2` is NOT supported
+    # (in-process queue, per-process session nonce). See deploy/README.md.
+
+  # Optional admin SPA. Start it with: docker compose --profile ui … up -d
+  ui:
+    profiles: ["ui"]
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    image: ${BRIDGE_UI_IMAGE:-evo-chatwoot-bridge-frontend:latest}
+    container_name: evo-chatwoot-bridge-ui
+    restart: unless-stopped
+    environment:
+      # The SPA resolves every request as `${BRIDGE_API_BASE_URL}/api/v1/...`.
+      # Leave it EMPTY to use the SPA's own origin and let your proxy route
+      # `/api` to the bridge (recommended: one origin, first-party session
+      # cookie, no CORS). Any non-empty value must be an origin WITHOUT `/api`
+      # — appending `/api` yields `/api/api/v1/...` and 404s.
+      BRIDGE_API_BASE_URL: ${BRIDGE_UI_API_BASE_URL:-}
+    ports:
+      - "${BRIDGE_UI_HOST_PORT:-8080}:80"
+    networks:
+      - db
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # No read_only here: the nginx entrypoint rewrites /config.js inside the
+    # image's html directory on every start, so the root filesystem must be
+    # writable. The container serves static files only and holds no state.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+networks:
+  # External: this network must already exist and already carry your MySQL
+  # container. Create it once with `docker network create bridge-db-net`, or
+  # set DB_NETWORK in deploy/.env to a network your database is attached to
+  # (e.g. the one created by your own MySQL compose project).
+  db:
+    external: true
+    name: ${DB_NETWORK:-bridge-db-net}

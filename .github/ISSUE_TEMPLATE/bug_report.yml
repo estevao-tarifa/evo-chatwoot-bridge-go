@@ -1,0 +1,154 @@
+name: Bug report
+description: Report a reproducible defect in the bridge
+title: "[bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Before you paste anything, **sanitize it**:
+        replace tokens with `<redacted>`, hosts with `bridge.example.com`,
+        phone numbers with `15550000000`, and payload bodies with `{ ... }`.
+
+        Never include webhook payloads, `instanceToken`, `apikey` /
+        `api_access_token` headers, signed webhook URLs, session cookies,
+        `DATABASE_URL`, `.env` files, `docker inspect` output, admin/Evolution/
+        Chatwoot screenshots, real phone numbers, contact names or message
+        content. Reproduce with **synthetic** data only. See
+        [SECURITY.md](https://github.com/estevao-tarifa/evo-chatwoot-bridge-go/blob/main/SECURITY.md).
+
+        For a security problem, **do not open this form** — follow SECURITY.md.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened
+      description: One paragraph. The observable failure, not a guess at the cause.
+      placeholder: Messages sent from WhatsApp are acknowledged, but no row is added to message_logs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What you expected to happen instead, and why (spec, ADR or docs).
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behaviour
+      description: What actually happened, with the exact reproduction steps.
+      placeholder: |
+        1. Send one message from WhatsApp
+        2. GET /api/v1/logs?connectionId=<id>&limit=20
+        3. No new row; direction/status shown is ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment shape
+      description: How the bridge is run (see docs/INSTALL.md).
+      options:
+        - Docker Compose (deploy/docker-compose.prod.yml)
+        - EasyPanel (Traefik + Docker Swarm)
+        - Other / custom
+    validations:
+      required: true
+
+  - type: input
+    id: mysql_version
+    attributes:
+      label: MySQL version
+      description: Version of the database behind `DATABASE_URL` (MySQL 8 or 9).
+      placeholder: "8.0.36"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tls_proxy
+    attributes:
+      label: Does a reverse proxy terminate TLS?
+      description: Whether `BRIDGE_URL` is HTTPS behind a proxy (Traefik, nginx, EasyPanel) or the bridge is reachable directly.
+      options:
+        - "Yes — TLS terminated at the reverse proxy"
+        - "No — bridge serves plain HTTP"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: replicas
+    attributes:
+      label: Running replica count
+      description: The bridge must run as a single replica (see README §Project status and known limitations).
+      options:
+        - "1 (single replica)"
+        - "More than 1"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: input
+    id: bridge_version
+    attributes:
+      label: Bridge version or commit
+      description: Output of `GET /api/v1/meta` (name, version, commit) or `git rev-parse HEAD` / the image tag.
+      placeholder: '{"name":"evo-chatwoot-bridge","version":"1.0.0","commit":"abc1234"}'
+    validations:
+      required: true
+
+  - type: textarea
+    id: webhook_status
+    attributes:
+      label: webhook-status
+      description: |
+        Output of `GET /api/v1/connections/{id}/webhook-status` for the affected connection.
+        Report at least the two `configured` fields; mask `urlMasked` if it embeds anything sensitive.
+      placeholder: |
+        {"evolution":{"configured":true},"chatwoot":{"configured":true},"instanceStatus":"connected"}
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: |
+        The bridge log around the failure. **Sanitize first** — no tokens, no
+        `instanceToken`, no message bodies, no media, no phone numbers or contact
+        names. Keep timestamps and the level/component fields.
+        Run with `LOG_LEVEL=debug` if the default level hides the cause.
+      placeholder: |
+        2026-01-01T00:00:00Z INFO httpapi route=/api/webhooks/evolution status=200
+        2026-01-01T00:00:00Z WARN bridge reason="<redacted>" external_id=<id>
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you already tried
+      description: |
+        Steps already attempted from docs/TROUBLESHOOTING.md (fast triage,
+        re-asserting the webhooks, re-running the migration, …) and what each
+        result was (including `/healthz`, `/readyz` and `/api/v1/meta` output,
+        sanitized).
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: Every value above is synthetic or sanitized — no tokens, payloads, phone numbers, contact names or customer data.
+          required: true
+        - label: This is not a security vulnerability (those go through SECURITY.md, never a public issue).
+          required: true

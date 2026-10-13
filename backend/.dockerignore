@@ -1,0 +1,6 @@
+# Never bake secrets or local files into the image.
+.env
+.env.*
+*.test
+*.out
+bin/
