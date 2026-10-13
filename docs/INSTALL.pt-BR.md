@@ -17,7 +17,7 @@ e liga os dois webhooks.
 
 | Você precisa de | Detalhe |
 |---|---|
-| **MySQL 8 ou 9** | acessível a partir do container da ponte; um banco em que você possa escrever. Tabelas existentes são preservadas; as migrações são aditivas |
+| **MySQL 8 ou 9** | acessível a partir do container da ponte; um banco em que você possa escrever. Tabelas existentes são preservadas; as migrações são aditivas. Um servidor pequeno basta — os dados somam ~25 MB após dois meses; veja [CONFIGURATION §5](CONFIGURATION.md#5-database-sizing-mysql) para o dimensionamento recomendado |
 | **Evolution GO** | rodando e **conectado ao WhatsApp** (instância `connected=true`). Anote a URL base, o nome da instância e a **API key global** (ou o token da instância) |
 | **Chatwoot** | URL base, um `api_access_token` de um **admin da conta**, o id da conta e uma inbox do tipo **API** |
 | **Uma URL pública para a ponte** | HTTPS recomendado. O Evolution GO guarda **um** webhook por instância, então essa URL precisa ser a definitiva |

@@ -31,6 +31,26 @@ planned work-in-progress:
 - Run **one replica**. Admin sessions carry a per-process nonce and the worker
   queue is in-process; the deployment artifacts pin `replicas: 1`.
 
+## [1.0.1] - 2026-10-13
+
+### Added
+
+- `deploy/mysql-tuning.cnf` — an economical MySQL configuration for this
+  workload. Measured on a live single-host deployment: **484 MiB → ~120 MiB
+  RSS** (the data set is ~25 MB after two months, ~20 messages/day), with the
+  bridge verified against the tuned server (`/readyz`, the dedup claim SQL, the
+  migration runner checks, `GET_LOCK`, transactions).
+- [CONFIGURATION §5](docs/CONFIGURATION.md#5-database-sizing-mysql) — what each
+  setting changes, what it costs, the two constraints that must not be broken
+  (`max_connections` above the bridge's pool of 25; disabling
+  `performance_schema` removes the `sys` schema and the dashboards built on it),
+  and how to apply, validate (`mysqld --validate-config`) and roll back.
+
+### Changed
+
+- The install guides (EN and PT-BR) point at the sizing section from the MySQL
+  prerequisite.
+
 ## [1.0.0] - 2026-10-13
 
 First public release: the Go rewrite of the bridge, deployed and verified as the
@@ -134,5 +154,6 @@ sharing a MySQL database with the historical Node bridge.
   both sides, webhook fail-closed probes and identity reuse without creating an
   entity.
 
-[Unreleased]: https://github.com/estevao-tarifa/evo-chatwoot-bridge-go/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/estevao-tarifa/evo-chatwoot-bridge-go/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/estevao-tarifa/evo-chatwoot-bridge-go/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/estevao-tarifa/evo-chatwoot-bridge-go/releases/tag/v1.0.0

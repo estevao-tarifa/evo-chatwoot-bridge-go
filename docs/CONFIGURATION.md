@@ -138,7 +138,68 @@ Only one of these is needed: either expose the SPA same-origin behind the bridge
 - Always run it **before** starting a new server version; an older binary keeps
   working on a migrated schema.
 
-## 5. Operational tuning
+## 5. Database sizing (MySQL)
+
+The bridge's workload is small: **~25 MB of data after two months**, ~20
+messages/day. A stock MySQL 8/9 sizes itself for a much larger server, so most of
+its resident memory is *configuration*, not data. Measured on a 4 vCPU / 8 GiB
+host with the production data set:
+
+| | RSS | `performance_schema` | buffer pool | `max_connections` |
+|---|---|---|---|---|
+| MySQL defaults | 484 MiB | ON | 128 MB | 151 |
+| [`deploy/mysql-tuning.cnf`](../deploy/mysql-tuning.cnf) | **~120 MiB** | OFF | 32 MB | 40 |
+
+What the tuning file changes, and what it costs:
+
+- **`performance_schema = OFF`** — the single biggest win (~250 MB). It is the
+  server's internal instrumentation; the bridge never reads it (its only schema
+  introspection is two `information_schema` queries in the migration runner).
+  You lose the `sys` schema and the dashboards built on it (MySQL Workbench
+  performance dashboard, Percona PMM, `mysqld_exporter`). The file enables
+  **`slow_query_log`** instead — the slow log does *not* depend on
+  `performance_schema`, and it is the tool you actually use to find a slow query.
+- **`innodb_buffer_pool_size = 32M`** — with a small pool the working set is
+  served from the **OS page cache**, which the kernel reclaims instead of it
+  being pinned by the database. Expect more disk reads; irrelevant at this
+  traffic level.
+- **`max_connections = 40`** — must stay **above 25**, the bridge's connection
+  pool (`maxOpenConns` in `backend/internal/storage/mysql/database.go`).
+- **`innodb_redo_log_capacity = 32M`** — ~70 MB less on disk (the default is
+  100 MB).
+- **`mysqlx = OFF`** — the X Protocol listener on 33060 is unused by the bridge;
+  closing it removes both memory and an open port.
+- **`skip_name_resolve`, `temptable_max_ram = 64M`, `max_heap_table_size = 4M`,
+  `table_definition_cache = 400`, `innodb_log_buffer_size = 1M`** — bounds on
+  worst-case allocations.
+
+Deliberately **not** changed: `log_bin` stays ON. Measured cost: ~2 MB. Turning it
+off (`skip-log-bin`) removes point-in-time recovery and replication — a bad trade
+for 2 MB.
+
+Apply it by mounting the file into the server's config directory:
+
+- **Docker Compose (self-managed MySQL):** mount
+  `./deploy/mysql-tuning.cnf:/etc/mysql/conf.d/mysql-tuning.cnf:ro`
+- **EasyPanel:** the database service already mounts a config file
+  (`<project>/<service>/easypanel.cnf` → `/etc/mysql/conf.d/easypanel.cnf`);
+  paste the file's contents there.
+
+Validate before restarting, then restart the service:
+
+```sh
+# MYSQL_CONTAINER is the name of your MySQL container/service
+docker exec "$MYSQL_CONTAINER" mysqld --validate-config   # exit 0 = the file is valid
+```
+
+Rollback is the inverse: remove the file (or empty it) and restart.
+
+**Growth.** These figures do not change with data volume: with a small pool the
+data lives on disk and in the OS page cache, and RSS stays flat as the tables
+grow. If the workload ever reaches millions of rows, raise
+`innodb_buffer_pool_size` first — nothing else needs to change.
+
+## 6. Operational tuning
 
 | Situation | Knob |
 |---|---|

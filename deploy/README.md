@@ -58,6 +58,68 @@ docker network connect bridge-db-net YOUR_MYSQL_CONTAINER
 
 Then set `DB_NETWORK` in `deploy/.env` (next step) to the network name you used.
 
+## MySQL sizing (recommended)
+
+The schema is tiny and the write rate is low, but a stock MySQL reserves RAM for
+a large buffer pool, the performance schema and hundreds of idle connections
+(151 by default). Shipping `deploy/mysql-tuning.cnf` cuts that fixed overhead:
+
+| Configuration | RSS | Notes |
+|---|---|---|
+| MySQL defaults | 484 MiB | ~25 MB of data, `performance_schema` on, 151 connections. |
+| `mysql-tuning.cnf` | ~120 MiB | Same data, bridge verified against it. |
+
+Both rows were measured on a real single-host deployment carrying the bridge's
+production data set (a 4 vCPU / 8 GiB host). After applying the file, `/readyz`
+stays green and the dedup claim SQL, the migrations runner, `GET_LOCK` and
+transactions were each verified against the tuned instance.
+
+### Apply it
+
+**Docker Compose** — mount the file read-only into MySQL's `conf.d` directory:
+
+```yaml
+services:
+  mysql:
+    volumes:
+      - ./mysql-tuning.cnf:/etc/mysql/conf.d/mysql-tuning.cnf:ro
+```
+
+**EasyPanel** — the DB service already mounts `<project>/<service>/easypanel.cnf`
+to `/etc/mysql/conf.d/easypanel.cnf`; paste the contents of
+`deploy/mysql-tuning.cnf` into that file and redeploy the DB service.
+
+### Validate before you restart
+
+`mysqld --validate-config` parses the file without starting the server; exit `0`
+means the configuration is valid. Set `MYSQL_CONTAINER` to your MySQL container
+name and run:
+
+```bash
+MYSQL_CONTAINER=your-mysql-container
+docker exec "$MYSQL_CONTAINER" mysqld --validate-config && echo "config OK"
+```
+
+Restart MySQL only after that exits `0`. **Rollback:** remove the mounted file
+(or the pasted block) and restart — nothing in the file is destructive; it only
+changes runtime sizing.
+
+### Two hard constraints
+
+- **`max_connections` must stay above 25.** The bridge's connection pool is
+  `maxOpenConns = 25` in `backend/internal/storage/mysql/database.go`; a lower
+  limit starves the pool and `/readyz` turns red.
+- **Disabling `performance_schema` removes the `sys` schema** and every dashboard
+  built on it — MySQL Workbench's performance dashboard, PMM and
+  `mysqld_exporter`. The slow query log stays available and is the intended
+  troubleshooting tool here.
+
+### Growth
+
+Memory does **not** grow with data volume — a small pool means the data is served
+from disk and the OS page cache — so if the workload ever grows, raise
+`innodb_buffer_pool_size` first.
+
 ## 3. Write the environment file
 
 ```bash

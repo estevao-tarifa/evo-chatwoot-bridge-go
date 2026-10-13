@@ -17,7 +17,7 @@ connection, and wire the two webhooks.
 
 | You need | Detail |
 |---|---|
-| **MySQL 8 or 9** | reachable from the bridge container; a database you may write to. Existing tables are preserved; migrations are additive |
+| **MySQL 8 or 9** | reachable from the bridge container; a database you may write to. Existing tables are preserved; migrations are additive. A small server is plenty — the data is ~25 MB after two months; see [CONFIGURATION §5](CONFIGURATION.md#5-database-sizing-mysql) for the recommended sizing |
 | **Evolution GO** | running and **connected to WhatsApp** (instance `connected=true`). Note its base URL, its instance name and its **global API key** (or the instance token) |
 | **Chatwoot** | a base URL, an `api_access_token` for an **account admin**, the account id, and an inbox of channel type **API** |
 | **A public URL for the bridge** | HTTPS recommended. Evolution GO posts one webhook per instance, so this URL must be the final one |

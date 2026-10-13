@@ -1,0 +1,40 @@
+[mysqld]
+# Economical sizing for the bridge's workload: ~25 MB of data after two months,
+# ~20 messages/day. Measured on a 4 vCPU / 8 GiB host: 484 MiB -> ~120 MiB RSS.
+
+# Observability: `performance_schema` is the single largest fixed cost and the
+# bridge does not read it, so it goes off; see the slow query log at the end.
+performance_schema                    = OFF
+
+# Buffer pool: ~25 MB of data is small enough to live in the OS page cache, so a
+# 32M pool, a single instance and minimal redo/log buffers are plenty.
+innodb_buffer_pool_size               = 32M
+innodb_buffer_pool_instances          = 1
+innodb_redo_log_capacity              = 32M
+innodb_log_buffer_size                = 1M
+innodb_adaptive_hash_index            = OFF
+innodb_buffer_pool_dump_at_shutdown   = OFF
+innodb_buffer_pool_load_at_startup    = OFF
+
+# Connections: the bridge's pool is 25 (`maxOpenConns` in database.go), so 40
+# leaves headroom for admin sessions without reserving memory for many threads.
+max_connections                       = 40
+
+# Caps: the workload opens few tables and never sorts large result sets, and each
+# of these buffers is allocated per connection or per temporary table.
+table_open_cache                      = 64
+table_definition_cache                = 400
+tmp_table_size                        = 4M
+max_heap_table_size                   = 4M
+temptable_max_ram                     = 64M
+
+# X plugin: unused — the bridge speaks the classic protocol — and it would
+# otherwise start its own listener and threads.
+mysqlx                                = OFF
+# Network: skip reverse-DNS lookups on every new connection (pure overhead here).
+skip_name_resolve                     = ON
+
+# `performance_schema` is off, so keep the slow query log as the troubleshooting tool:
+slow_query_log                        = 1
+long_query_time                       = 1
+log_output                            = FILE
